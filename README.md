@@ -14,6 +14,7 @@
 - [DynamicSceneRemoved (Command 1300)](#1300d)
 - [DynamicAllSceneRemoved (Command 1300)](#1300e)
 - [DynamicClientAdded (Command 1500)](#1500a)
+- [DynamicClientUpdated (Command 1500)](#1500b)
 
 <a name="1200a"></a>
 ## 1)DynamicIndexUpdated (Command 1200)
@@ -373,3 +374,21 @@
 
     Flow
     socket(packet)->controller(processor)->preprocessor(doNothing)->genericModel(execute)->genericModel(add)->receive(mainFunction)->notify(sendAlwaysClient)->generator(wifiNotificationGenerator)->cassandra(qtoCassHistory)->cassandra(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)
+
+<a name="1500b"></a>
+## 15)DynamicClientUpdated (Command 1500)
+    Command no 
+    1500- JSON format
+
+    Required 
+    Command,CommandType,Payload,almondMAC
+
+    SQl
+    2.Insert on AlmondplusDB.WIFICLIENTS
+      params: AlmondMAC
+
+    Functional
+    1.Command 1500
+
+    Flow
+    socket(packet)->controller(processor)->preprocessor(doNothing)->genericModel(execute)->genericModel(update)
