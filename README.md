@@ -19,6 +19,11 @@
 - [DynamicClientRemoved (Command 1500)](#1500d)
 - [DynamicAllClientsRemoved (Command 1500)](#1500e)
 - [DynamicAllDevicesRemoved (Command 1200)](#1200e)
+- [DynamicClientJoined (Command 1500)](#1500f)
+- [DynamicClientLeft (Command 1500)](#1500g)
+- [DynamicAlmondNameChange (Command 49)](#49)
+- [DynamicAlmondModeChangeRequest (Command 153)](#153)
+- [DynamicAlmondProperties (Command 1050)](#1050)
 
 <a name="1200a"></a>
 ## 1)DynamicIndexUpdated (Command 1200)
@@ -31,15 +36,54 @@
     REDIS
     
     /*if (data.index==0 && packet.cmsCode)*/
-    2.hgetall on MAC:<packet.AlmondMAC>,data.DeviceID   
+    2. hgetall on MAC:<AlmondMAC>,data.DeviceID   
                     
              (or)
 
-    2. Skip the code
+    2. Return
 
+    /* if(Object.keys(variables).length==0) */
+      multi   
+    3.hmset on MAC:<AlmondMAC>:Key, variables    
+    //Above, key = Device keys, variables = Device Values
+     
+                       (or)
 
-    multi
-    3.hmset on MAC:<payload.AlmondMAC>,deviceArray     //Where deviceAray =Device keys in Payload
+     /* if (deviceArray.length>0) */
+      multi
+    3.hmset on MAC:<AlmondMAC>,deviceArray        //Where deviceAray =Device keys in Payload
+
+     7.LPUSH on AlmondMAC_Device                // params: redisData
+
+     /* if (res > count + 1) */
+     8.LTRIM on AlmondMAC_Device                //here count = 9, res = Result from step 10
+               
+                (or)
+
+     /* if (res == 1) */
+     8.expire on AlmondMAC_Device             //here, res = Result from step 10
+
+     9.LPUSH on AlmondMAC_All               // params: redisData
+
+     /* if (res > count + 1) */
+     10.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 12
+               
+               (or)
+
+     /* if (res == 1) */
+     10.expire on AlmondMAC_All             //here, res = Result from above step 12
+
+     Postgres
+     11.Insert on recentactivity
+       params: mac, id, time, index_id, index_name, name, type, value
+
+     Cassandra
+     14.Insert on notification_store.notification_records
+        params: usr_id, noti_time, i_time, msg
+     15.Update on notification_store.badger  
+        params: user_id  
+     16.Select on notification_store.badger
+        params: usr_id
 
     SQl
     4.Select on AlmondplusDB.NotificationPreferences
@@ -48,14 +92,27 @@
       params:UserID
     6.Select on DeviceData
       params: AlmondMAC,DeviceID
-    7.Select on SCSIDB.CMSAffiliations,AlmondplusDB.AlmondUsers,SCSIDB.CMS
-      params: CA.CMSCode,AU.AlmondMAC
+    17.Update on AlmondplusDB.NotificationID
+       params:RegID
+
+     /*if (oldRegid && oldRegid.length > 0) */
+     18.Delete on AlmondplusDB.NotificationID
+        params: RegID
+     19.Select on SCSIDB.CMSAffiliations,AlmondplusDB.AlmondUsers,SCSIDB.CMS
+        params: CA.CMSCode,AU.AlmondMAC 
 
     Functional
     1.Command 1200
+    12.delete ans.AlmondMAC;
+       delete ans.CommandType;
+       delete ans.Action;
+       delete ans.HashNow;
+       delete ans.Devices;
+       delete ans.epoch
+    13.delete input.users
 
     Flow
-    consumer(processMessage)->controller(processor)->preprocessor(dynamicIndexUpdated)->redisDeviceValue(getIndexValue)->device(updateIndex)->redisDeviceValue(update)->receive(mainFunction)->generator(deviceIndexUpdate)->scsi(sendFinal)
+    consumer(processMessage)->controller(processor)->preprocessor(dynamicIndexUpdated)->redisDeviceValue(getIndexValue)->device(updateIndex)->redisDeviceValue(update)->receive(mainFunction)->receive(dynamicIndexUpdate)->generator(deviceIndexUpdate)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)->scsi(sendFinal)
 
 <a name="1200b"></a>
 ## 2)DynamicDeviceUpdated (Command 1200)
@@ -70,7 +127,7 @@
     /* if(Object.keys(variables).length==0) */
     multi   
     2.hmset on MAC:<AlmondMAC>:Key, variables    
-    //Above key = Device keys, variables = Device Values
+    //Above, key = Device keys, variables = Device Values
      
                        (or)
 
@@ -102,7 +159,7 @@
     Command,CommandType,Payload,almondMAC
 
     REDIS
-    2.hgetall on MAC:<payload AlmondMAC>
+    2.hgetall on MAC:<AlmondMAC>
 
     multi
     4.hmset on AL_<AlmondMAC>       // values = [deviceRestore,restore]
@@ -122,6 +179,7 @@
     //Above key = Device keys, variables = Device Values
      
                        (or)
+
      /* if (deviceArray.length>0) */
      multi
     11.hmset on MAC:<AlmondMAC>,deviceArray        //Where deviceAray =Device keys in Payload
@@ -162,13 +220,23 @@
       params: CA.CMSCode,AU.AlmondMAC
 
     REDIS
-    2.hmset on MAC:<payload.AlmondMAC>,deviceArray     //Where deviceAray =Device keys in Payload
+    
+    /* if(Object.keys(variables).length==0) */
+    multi   
+    2.hmset on MAC:<AlmondMAC>:Key, variables    
+    //Above, key = Device keys, variables = Device Values
+     
+                       (or)
+
+     /* if (deviceArray.length>0) */
+     multi
+    2.hmset on MAC:<AlmondMAC>,deviceArray        //Where deviceAray =Device keys in Payload
 
     Functional
     1.Command 1200
     
     Flow
-    consumer(processMessage)->controller(processor)->preprocessor(dymamicAddAllDevice)->device(execute)->redisDeviceValue[add]->genericModel[add]->receive(mainFunction)->scsi(sendFinal)
+    consumer(processMessage)->controller(processor)->preprocessor(dymamicAddAllDevice)->device(execute)->redisDeviceValue(add)->genericModel(add)->receive(mainFunction)->scsi(sendFinal)
 
 <a name="1400a"></a>
 ## 5)DynamicRuleAdded (Command 1400)
@@ -357,8 +425,8 @@
        params: RegID
 
     REDIS
-    4.hmget on AL_<input.AlmondMAC>
-    5.LPUSH on AlmondMAC_Client
+    4.hmget on AL_<AlmondMAC>                   // params: ["name"]
+    5.LPUSH on AlmondMAC_Client                 // params: redisData
 
     /* if (res > count + 1) */
     6.LTRIM on AlmondMAC_Client                //here count = 9, res = Result from step 5
@@ -368,7 +436,7 @@
     /* if (res == 1) */
     6.expire on AlmondMAC_Client             //here, res = Result from step 5
     
-    7.LPUSH on AlmondMAC_All
+    7.LPUSH on AlmondMAC_All                // params: redisData
     /* if (res > count + 1) */
     8.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 7
                
@@ -432,16 +500,16 @@
      SQl
      2.Insert on  AlmondplusDB.WIFICLIENTS
        params: AlmondMAC
-     5.Delete on WIFICLIENTS
+     3.Delete on WIFICLIENTS
        params: AlmondMAC
-     6.Insert on  AlmondplusDB.WIFICLIENTS
+     4.Insert on  AlmondplusDB.WIFICLIENTS
       params: AlmondMAC
 
      Functional
      1.Command 1500
     
      Flow
-     socket(packet)->controller(processor)->preprocessor(doNothing)->genericModel(execute)->genericModel(addAll),genericModel(insertBackUpAndUpdate),genericModel(get),cassandra(execute),genericModel(removeAndInsert)->receive(mainFunction)
+     socket(packet)->controller(processor)->preprocessor(doNothing)->genericModel(execute)->genericModel(addAll),genericModel(insertBackUpAndUpdate),genericModel(get),cassandra(execute)->genericModel(removeAndInsert)->receive(mainFunction)
 
 <a name="1500d"></a>
 ## 17)DynamicClientRemoved (Command 1500)
@@ -466,8 +534,8 @@
         params: RegID
 
      REDIS
-     5.hmget on AL_<input.AlmondMAC>
-     6.LPUSH on AlmondMAC_Client
+     5.hmget on AL_<AlmondMAC>                 //// params: ["name"]
+     6.LPUSH on AlmondMAC_Client               // params: redisData
 
      /* if (res > count + 1) */
      7.LTRIM on AlmondMAC_Client                //here count = 9, res = Result from step 6
@@ -477,7 +545,7 @@
      /* if (res == 1) */
      7.expire on AlmondMAC_Client             //here, res = Result from step 6
 
-     8.LPUSH on AlmondMAC_All
+     8.LPUSH on AlmondMAC_All               // params: redisData
      /* if (res > count + 1) */
      9.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 8
                
@@ -509,6 +577,9 @@
 
      12.delete input.users;
 
+     Flow
+     socket(packet)->controller(processor)->preprocessor(dynamicClientRemoved)->genericModel(execute)->genericModel(remove)->receive(mainFunction)->receive(sendAlwaysClient)->generator(wifiNotificationGenerator)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)
+
 <a name="1500e"></a>
 ## 18)DynamicAllClientsRemoved (Command 1500)
      Command no 
@@ -530,7 +601,7 @@
         params: RegID
 
      Redis
-     5.hmget on AL_<input.AlmondMAC>
+     5.hmget on AL_<AlmondMAC>
 
      Cassandra
      2.Insert on notification_store.almondhistory
@@ -553,6 +624,9 @@
 
      7.delete input.users;
 
+     Flow
+     socket(packet)->controller(processor)->preprocessor(doNothing)->genericModel(execute)->genericModel(removeAll)->receive(mainFunction)->receive(AlwaysTrue)->generator(wifiNotificationGenerator)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)
+
 <a name="1200e"></a>
 ## 19)DynamicAllDevicesRemoved (Command 1200)
      Command no 
@@ -574,19 +648,19 @@
         params: RegID
 
      REDIS
-     2.hgetall on MAC:<payload.AlmondMAC>
+     2.hgetall on MAC:<AlmondMAC>
 
      multi
-     3.del on MAC:<payload.AlmondMAC>
+     3.del on MAC:<AlmondMAC>
 
      multi 
-     4.del on  MAC:<payload.AlmondMAC>:deviceIds
+     4.del on  MAC:<AlmondMAC>:deviceIds
 
      multi
-     5.hdel on AL_<payload.AlmondMAC>           // value = deviceRestore
+     5.hdel on AL_<AlmondMAC>           // value = deviceRestore
 
      9.hmget on AL_<AlmondMAC>
-     10.LPUSH on AlmondMAC_Device
+     10.LPUSH on AlmondMAC_Device                // params: redisData
 
      /* if (res > count + 1) */
      11.LTRIM on AlmondMAC_Device                //here count = 9, res = Result from step 10
@@ -596,7 +670,7 @@
      /* if (res == 1) */
      11.expire on AlmondMAC_Device             //here, res = Result from step 10
 
-     12.LPUSH on AlmondMAC_All
+     12.LPUSH on AlmondMAC_All               // params: redisData
      /* if (res > count + 1) */
      13.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 12
                
@@ -607,7 +681,7 @@
 
      Postgres
      14.Insert on recentactivity
-       params: mac, id, time, index_id, client_id, name, type, value
+       params: mac, id, time, index_id, index_name, name, type, value
 
      Cassandra
      6. Insert on  notification_store.almondhistory
@@ -628,3 +702,253 @@
        delete ans.Devices;
        delete ans.epoch
     16.delete input.users
+
+    Flow
+    socket(packet)->controller(processor)->preprocessor(doNothing)->device(execute)->redisDeviceValue(removeAll)->genericModel(removeAll)->receive(mainFunction)->receive(AlwaysTrue)->generator(wifiNotificationGenerator)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)   
+
+<a name="1500f"></a>
+## 20)DynamicClientJoined (Command 1500)
+     Command no 
+     1500- JSON format
+
+     Required 
+     Command,CommandType,Payload,almondMAC
+
+     SQl
+     2.Insert on AlmondplusDB.WIFICLIENTS
+       params: AlmondMAC
+     3.Select on AlmondplusDB.WifiClientsNotificationPreferences
+       params: AlmondMAC,ClientID,UserID
+     4.Select on NotificationID
+       params: UserID
+     16.Update on AlmondplusDB.NotificationID
+        params:RegID
+
+     /*if (oldRegid && oldRegid.length > 0) */
+     17.Delete on AlmondplusDB.NotificationID
+        params: RegID
+
+     REDIS 
+     5.hmget on AL_<almondMAC>           // params: ["name"]
+     6.LPUSH on AlmondMAC_Client         // params: redisData
+
+     /* if (res > count + 1) */
+     7.LTRIM on AlmondMAC_Client                //here count = 9, res = Result from step 6
+               
+                (or)
+
+     /* if (res == 1) */
+     7.expire on AlmondMAC_Client             //here, res = Result from step 6
+
+     8.LPUSH on AlmondMAC_All               //params: redisData
+     /* if (res > count + 1) */
+     9.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 8
+               
+               (or)
+
+     /* if (res == 1) */
+     9.expire on AlmondMAC_All             //here, res = Result from above step 8
+
+     Postgres
+     10.Insert on recentactivity
+       params: mac, id, time, index_id, client_id, name, type, value
+
+     Cassandra
+     13.Insert on notification_store.notification_records
+        params: usr_id, noti_time, i_time, msg
+     14.Update on notification_store.badger  
+        params: user_id  
+     15.Select on notification_store.badger
+        params: usr_id
+
+     Functional
+     1.Command 1500
+     11.delete ans.AlmondMAC;
+        delete ans.CommandType;
+        delete ans.Action;
+        delete ans.HashNow;
+        delete ans.Devices;
+        delete ans.epoch;
+
+     12.delete input.users;
+
+     Flow
+     socket(packet)->controller(processor)->preprocessor(doNothing)->genericModel(execute)->genericModel(update)->receive(mainFunction)->receive(checkClientPreference)->generator(wifiNotificationGenerator)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)
+
+<a name="1500g"></a>
+## 21)DynamicClientLeft (Command 1500)
+     Command no 
+     1500- JSON format
+
+     Required 
+     Command,CommandType,Payload,almondMAC
+
+     SQl
+     2.Insert on AlmondplusDB.WIFICLIENTS
+       params: AlmondMAC
+     3.Select on AlmondplusDB.WifiClientsNotificationPreferences
+       params: AlmondMAC,ClientID,UserID
+     4.Select on NotificationID
+     16.Update on AlmondplusDB.NotificationID
+        params:RegID
+
+     /*if (oldRegid && oldRegid.length > 0) */
+     17.Delete on AlmondplusDB.NotificationID
+        params: RegI
+
+     REDIS 
+     5.hmget on AL_<almondMAC>           // params: ["name"]
+     6.LPUSH on AlmondMAC_Client         // params: redisData
+
+     /* if (res > count + 1) */
+     7.LTRIM on AlmondMAC_Client                //here count = 9, res = Result from step 6
+               
+                (or)
+
+     /* if (res == 1) */
+     7.expire on AlmondMAC_Client             //here, res = Result from step 6
+
+     8.LPUSH on AlmondMAC_All               //params: redisData
+     /* if (res > count + 1) */
+     9.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 8
+               
+               (or)
+
+     /* if (res == 1) */
+     9.expire on AlmondMAC_All             //here, res = Result from above step 8
+
+     Postgres
+     10.Insert on recentactivity
+       params: mac, id, time, index_id, client_id, name, type, value
+
+     Cassandra
+     13.Insert on notification_store.notification_records
+        params: usr_id, noti_time, i_time, msg
+     14.Update on notification_store.badger  
+        params: user_id  
+     15.Select on notification_store.badger
+        params: usr_id
+
+     Functional
+     1.Command 1500
+     11.delete ans.AlmondMAC;
+       delete ans.CommandType;
+       delete ans.Action;
+       delete ans.HashNow;
+       delete ans.Devices;
+       delete ans.epoch;
+
+     12.delete input.users;
+
+     Flow
+     socket(packet)->controller(processor)->preprocessor(doNothing)->genericModel(execute)->genericModel(update)->receive(mainFunction)->receive(checkClientPreference)->generator(wifiNotificationGenerator)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)
+
+<a name="49"></a>
+## 22)DynamicAlmondNameChange (Command 49)
+     Command no 
+     49- JSON format
+
+     Required 
+     Command,CommandType,Payload,almondMAC
+
+     REDIS
+     2.hmset on AL_<AlmondMAC>          // params: [redisKey[key], data[key]     
+ 
+     Functional
+     1.Command 49
+
+     Flow
+     socket(packet)->controller(processor)->preprocessor(doNothing)->almondCommands(almond_name_change)
+
+<a name="153"></a>
+## 23)DynamicAlmondModeChangeRequest (Command 153)
+     Command no 
+     153- JSON format
+
+     Required 
+     Command,CommandType,Payload,almondMAC
+
+     REDIS
+     2.hmset on AL_<AlmondMAC>          // params: [redisKey[key], data[key]     
+ 
+     Functional
+     1.Command 153
+
+     Flow
+     socket(packet)->controller(processor)->preprocessor(doNothing)->almondCommands(changeMode)
+
+<a name="1050"></a>
+## 24)DynamicAlmondProperties (Command 1050)
+     Command no
+     1050- JSON format
+
+     Required
+     Command,CommandType,Payload,almondMAC
+
+     Redis
+     2.hmset on AL_<AlmondMAC>                   // params: [redisKey[key], data[key]]
+
+     SQl
+     3.Select on ALMONDPROPERTIES
+       params:AlmondMAC
+     4.Update on AlmondProperties2
+       params:AlmondMAC
+     5.select from NotificationID 
+       params:UserID 
+     16.Update on AlmondplusDB.NotificationID
+        params:RegID
+
+     /*if (oldRegid && oldRegid.length > 0) */
+     17.Delete on AlmondplusDB.NotificationID
+        params: RegI
+     18.Select on SCSIDB.CMSAffiliations,AlmondplusDB.AlmondUsers,SCSIDB.CMS
+        params: CA.CMSCode,AU.AlmondMAC 
+
+
+     Redis
+     6.hmget on AL_<almondMAC>                     // params: ["name"]
+
+     7.LPUSH on AlmondMAC_Client         // params: redisData
+
+     /* if (res > count + 1) */
+     7.LTRIM on AlmondMAC_Client                //here count = 9, res = Result from step 6
+               
+                (or)
+
+     /* if (res == 1) */
+     7.expire on AlmondMAC_Client             //here, res = Result from step 6
+
+     8.LPUSH on AlmondMAC_All               //params: redisData
+     /* if (res > count + 1) */
+     9.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 8
+               
+               (or)
+
+     /* if (res == 1) */
+     9.expire on AlmondMAC_All             //here, res = Result from above step 8
+
+     Postgres
+     10.Insert on recentactivity
+        params: mac, id, time, index_id, client_id, name, type, value
+
+     Cassandra
+     13.Insert on notification_store.notification_records
+        params: usr_id, noti_time, i_time, msg
+     14.Update on notification_store.badger  
+        params: user_id  
+     15.Select on notification_store.badger
+        params: usr_id
+
+    Functional
+    1.Command 1050
+    11.delete ans.AlmondMAC;
+       delete ans.CommandType;
+       delete ans.Action;
+       delete ans.HashNow;
+       delete ans.Devices;
+       delete ans.epoch;
+
+     12.delete input.users;
+
+    Flow
+    socket(packet)->controller(processor)->preprocessor(doNothing)->almondCommands(DynamicAlmondProperties)->genericModel(get)->receive(mainFunction)->receive(almondProperties)->generator(propertiesNotification)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)->scsi(sendFinal)
