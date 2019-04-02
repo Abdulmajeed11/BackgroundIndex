@@ -22,7 +22,7 @@
 - [DynamicClientJoined (Command 1500)](#1500f)
 - [DynamicClientLeft (Command 1500)](#1500g)
 - [DynamicAlmondNameChange (Command 49)](#49)
-- [DynamicAlmondModeChangeRequest (Command 153)](#153)
+- [DynamicAlmondModeChange (Command 153)](#153)
 - [DynamicAlmondProperties (Command 1050)](#1050)
 
 <a name="1200a"></a>
@@ -861,7 +861,7 @@
      socket(packet)->controller(processor)->preprocessor(doNothing)->almondCommands(almond_name_change)
 
 <a name="153"></a>
-## 23)DynamicAlmondModeChangeRequest (Command 153)
+## 23)DynamicAlmondModeChange (Command 153)
      Command no 
      153- JSON format
 
@@ -885,9 +885,6 @@
      Required
      Command,CommandType,Payload,almondMAC
 
-     Redis
-     2.hmset on AL_<AlmondMAC>                   // params: [redisKey[key], data[key]]
-
      SQl
      3.Select on ALMONDPROPERTIES
        params:AlmondMAC
@@ -895,60 +892,60 @@
        params:AlmondMAC
      5.select from NotificationID 
        params:UserID 
-     16.Update on AlmondplusDB.NotificationID
+     17.Update on AlmondplusDB.NotificationID
         params:RegID
 
      /*if (oldRegid && oldRegid.length > 0) */
-     17.Delete on AlmondplusDB.NotificationID
+     18.Delete on AlmondplusDB.NotificationID
         params: RegI
-     18.Select on SCSIDB.CMSAffiliations,AlmondplusDB.AlmondUsers,SCSIDB.CMS
+     19.Select on SCSIDB.CMSAffiliations,AlmondplusDB.AlmondUsers,SCSIDB.CMS
         params: CA.CMSCode,AU.AlmondMAC 
 
 
      Redis
+     2.hmset on AL_<AlmondMAC>                   // params: [redisKey[key], data[key]]
      6.hmget on AL_<almondMAC>                     // params: ["name"]
 
-     7.LPUSH on AlmondMAC_Client         // params: redisData
+     7.LPUSH on AlmondMAC_Device         // params: redisData
 
      /* if (res > count + 1) */
-     7.LTRIM on AlmondMAC_Client                //here count = 9, res = Result from step 6
+     8.LTRIM on AlmondMAC_Device                //here count = 9, res = Result from step 7
                
                 (or)
 
      /* if (res == 1) */
-     7.expire on AlmondMAC_Client             //here, res = Result from step 6
+     8.expire on AlmondMAC_Device             //here, res = Result from step 7
 
-     8.LPUSH on AlmondMAC_All               //params: redisData
+     9.LPUSH on AlmondMAC_All               //params: redisData
      /* if (res > count + 1) */
-     9.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 8
+     10.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 9
                
                (or)
 
      /* if (res == 1) */
-     9.expire on AlmondMAC_All             //here, res = Result from above step 8
+     10.expire on AlmondMAC_All             //here, res = Result from above step 9
 
      Postgres
-     10.Insert on recentactivity
-        params: mac, id, time, index_id, client_id, name, type, value
+     11.Insert on recentactivity
+        params: mac, id, time, index_id, index_name, name, type, value
 
      Cassandra
-     13.Insert on notification_store.notification_records
+     14.Insert on notification_store.notification_records
         params: usr_id, noti_time, i_time, msg
-     14.Update on notification_store.badger  
+     15.Update on notification_store.badger  
         params: user_id  
-     15.Select on notification_store.badger
+     16.Select on notification_store.badger
         params: usr_id
 
     Functional
     1.Command 1050
-    11.delete ans.AlmondMAC;
+    12.delete ans.AlmondMAC;
        delete ans.CommandType;
        delete ans.Action;
        delete ans.HashNow;
        delete ans.Devices;
        delete ans.epoch;
-
-     12.delete input.users;
+    13.delete input.users;
 
     Flow
     socket(packet)->controller(processor)->preprocessor(doNothing)->almondCommands(DynamicAlmondProperties)->genericModel(get)->receive(mainFunction)->receive(almondProperties)->generator(propertiesNotification)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)->scsi(sendFinal)
