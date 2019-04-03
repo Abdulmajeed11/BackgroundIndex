@@ -19,6 +19,7 @@
 - [DynamicClientRemoved (Command 1500)](#1500d)
 - [DynamicAllClientsRemoved (Command 1500)](#1500e)
 - [DynamicAllDevicesRemoved (Command 1200)](#1200e)
+- [DynamicDeviceRemoved (Command 1200)](#1200f)
 - [DynamicClientJoined (Command 1500)](#1500f)
 - [DynamicClientLeft (Command 1500)](#1500g)
 - [DynamicAlmondNameChange (Command 49)](#49)
@@ -56,22 +57,22 @@
      7.LPUSH on AlmondMAC_Device                // params: redisData
 
      /* if (res > count + 1) */
-     8.LTRIM on AlmondMAC_Device                //here count = 9, res = Result from step 10
+     8.LTRIM on AlmondMAC_Device                //here count = 9, res = Result from step 7
                
                 (or)
 
      /* if (res == 1) */
-     8.expire on AlmondMAC_Device             //here, res = Result from step 10
+     8.expire on AlmondMAC_Device             //here, res = Result from step 7
 
      9.LPUSH on AlmondMAC_All               // params: redisData
 
      /* if (res > count + 1) */
-     10.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 12
+     10.LTRIM on AlmondMAC_All                //here count = 19, res = Result from step 9
                
                (or)
 
      /* if (res == 1) */
-     10.expire on AlmondMAC_All             //here, res = Result from above step 12
+     10.expire on AlmondMAC_All             //here, res = Result from above step 9
 
      Postgres
      11.Insert on recentactivity
@@ -140,9 +141,6 @@
       params:AlmondMAC
     4.Select on SCSIDB.CMSAffiliations,AlmondplusDB.AlmondUsers,SCSIDB.CMS
       params: CA.CMSCode,AU.AlmondMAC
-
-    Required 
-    Command,CommandType,Payload,almondMAC
 
     Functional
     1.Command 1200
@@ -465,7 +463,6 @@
       delete ans.HashNow;
       delete ans.Devices;
       delete ans.epoch;
-
     11.delete input.users;
 
     Flow
@@ -574,7 +571,6 @@
         delete ans.HashNow;
         delete ans.Devices;
         delete ans.epoch;
-
      12.delete input.users;
 
      Flow
@@ -621,7 +617,6 @@
         delete ans.HashNow;
         delete ans.Devices;
         delete ans.epoch;
-
      7.delete input.users;
 
      Flow
@@ -646,6 +641,8 @@
      /*if (oldRegid && oldRegid.length > 0) */
      21.Delete on AlmondplusDB.NotificationID
         params: RegID
+     22.Select on SCSIDB.CMSAffiliations,AlmondplusDB.AlmondUsers,SCSIDB.CMS
+        params: CA.CMSCode,AU.AlmondMAC
 
      REDIS
      2.hgetall on MAC:<AlmondMAC>
@@ -695,19 +692,46 @@
 
      Functional
      1.Command 1200
-    15.delete ans.AlmondMAC;
+     15.delete ans.AlmondMAC;
        delete ans.CommandType;
        delete ans.Action;
        delete ans.HashNow;
        delete ans.Devices;
        delete ans.epoch
-    16.delete input.users
+     16.delete input.users
 
-    Flow
-    socket(packet)->controller(processor)->preprocessor(doNothing)->device(execute)->redisDeviceValue(removeAll)->genericModel(removeAll)->receive(mainFunction)->receive(AlwaysTrue)->generator(wifiNotificationGenerator)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)   
+     Flow
+     socket(packet)->controller(processor)->preprocessor(doNothing)->device(execute)->redisDeviceValue(removeAll)->genericModel(removeAll)->receive(mainFunction)->receive(AlwaysTrue)->generator(wifiNotificationGenerator)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)->scsi(sendFinal)   
+
+<a name="1200f"></a>
+## 20)DynamicDeviceRemoved (Command 1200)
+     Command no 
+     1200- JSON format
+
+     Required 
+     Command,CommandType,Payload,almondMAC
+    
+     SQL
+     4.Delete on DEVICE_DATA
+       params:AlmondMAC
+     5.Select on SCSIDB.CMSAffiliations,AlmondplusDB.AlmondUsers,SCSIDB.CMS
+       params: CA.CMSCode,AU.AlmondMAC
+
+     REDIS
+     multi
+     2.hdel on MAC:<AlmondMAC>,deviceID
+     
+     multi
+     3.del on MAC:<AlmondMAC>:deviceID
+
+     Functional
+     1.Command 1200
+
+     Flow
+     socket(packet)->controller(processor)->preprocessor(doNothing)->device(execute)->redisDeviceValue(remove)->genericModel(remove)->receive(mainFunction)->scsi(sendFinal)
 
 <a name="1500f"></a>
-## 20)DynamicClientJoined (Command 1500)
+## 21)DynamicClientJoined (Command 1500)
      Command no 
      1500- JSON format
 
@@ -769,14 +793,13 @@
         delete ans.HashNow;
         delete ans.Devices;
         delete ans.epoch;
-
      12.delete input.users;
 
      Flow
      socket(packet)->controller(processor)->preprocessor(doNothing)->genericModel(execute)->genericModel(update)->receive(mainFunction)->receive(checkClientPreference)->generator(wifiNotificationGenerator)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)
 
 <a name="1500g"></a>
-## 21)DynamicClientLeft (Command 1500)
+## 22)DynamicClientLeft (Command 1500)
      Command no 
      1500- JSON format
 
@@ -837,14 +860,13 @@
        delete ans.HashNow;
        delete ans.Devices;
        delete ans.epoch;
-
      12.delete input.users;
 
      Flow
      socket(packet)->controller(processor)->preprocessor(doNothing)->genericModel(execute)->genericModel(update)->receive(mainFunction)->receive(checkClientPreference)->generator(wifiNotificationGenerator)->cassQueries(qtoCassHistory)->cassQueries(qtoCassConverter)->msgService(notificationHandler)->msgService(handleResponse)
 
 <a name="49"></a>
-## 22)DynamicAlmondNameChange (Command 49)
+## 23)DynamicAlmondNameChange (Command 49)
      Command no 
      49- JSON format
 
@@ -861,7 +883,7 @@
      socket(packet)->controller(processor)->preprocessor(doNothing)->almondCommands(almond_name_change)
 
 <a name="153"></a>
-## 23)DynamicAlmondModeChange (Command 153)
+## 24)DynamicAlmondModeChange (Command 153)
      Command no 
      153- JSON format
 
@@ -878,7 +900,7 @@
      socket(packet)->controller(processor)->preprocessor(doNothing)->almondCommands(changeMode)
 
 <a name="1050"></a>
-## 24)DynamicAlmondProperties (Command 1050)
+## 25)DynamicAlmondProperties (Command 1050)
      Command no
      1050- JSON format
 
